@@ -89,7 +89,7 @@ class SimpleStorageService:
         except Exception as e:
             raise MyException(e, sys) from e
 
-    def get_file_object(self, filename: str, bucket_name: str) -> Union[List[object], object]:
+    def get_file_object(self, filename: str, bucket_name: str) -> object:
         """
         Retrieves the file object(s) from the specified bucket based on the filename.
 
@@ -98,19 +98,24 @@ class SimpleStorageService:
             bucket_name (str): The name of the S3 bucket.
 
         Returns:
-            Union[List[object], object]: The S3 file object or list of file objects.
+            object: The S3 file object if one match is found.
+            Raises:
+                MyException: If no files or multiple files are found.
         """
         logging.info("Entered the get_file_object method of SimpleStorageService class")
         try:
             bucket = self.get_bucket(bucket_name)
             file_objects = [file_object for file_object in bucket.objects.filter(Prefix=filename)]
-            func = lambda x: x[0] if len(x) == 1 else x
-            file_objs = func(file_objects)
+        
+            if len(file_objects) == 0:
+                raise MyException(f"No file found with prefix '{filename}' in bucket '{bucket_name}'", sys)
+            if len(file_objects) > 1:
+                raise MyException(f"Multiple files found with prefix '{filename}' in bucket '{bucket_name}'", sys)
+        
             logging.info("Exited the get_file_object method of SimpleStorageService class")
-            return file_objs
+            return file_objects[0]  # Return the single object
         except Exception as e:
             raise MyException(e, sys) from e
-
     def load_model(self, model_name: str, bucket_name: str, model_dir: str = None) -> object:
         """
         Loads a serialized model from the specified S3 bucket.
@@ -126,6 +131,12 @@ class SimpleStorageService:
         try:
             model_file = model_dir + "/" + model_name if model_dir else model_name
             file_object = self.get_file_object(model_file, bucket_name)
+
+            # Ensure file_object is not a list (should already be handled in get_file_object)
+            if isinstance(file_object, list):
+                raise MyException(f"Expected a single object, but got a list for '{model_file}'", sys)
+
+            # Read and deserialize the model
             model_obj = self.read_object(file_object, decode=False)
             model = pickle.loads(model_obj)
             logging.info("Production model loaded from S3 bucket.")
